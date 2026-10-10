@@ -1,0 +1,6 @@
+ok  	relaynote/cmd/relaynote	1.051s
+ok  	relaynote/examples/mocktasks	1.805s
+ok  	relaynote/internal/api	1.656s
+ok  	relaynote/internal/client	10.966s
+ok  	relaynote/internal/outbox	1.018s
+ok  	relaynote/internal/store	2.168s

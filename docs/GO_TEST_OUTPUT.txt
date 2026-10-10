@@ -1,0 +1,275 @@
+=== RUN   TestCLIRoundTrip
+--- PASS: TestCLIRoundTrip (0.01s)
+=== RUN   TestOutboxPoisonDoesNotBlockOtherEntries
+--- PASS: TestOutboxPoisonDoesNotBlockOtherEntries (0.01s)
+=== RUN   TestRemotePlaintextServerRefused
+--- PASS: TestRemotePlaintextServerRefused (0.00s)
+PASS
+ok  	relaynote/cmd/relaynote	0.024s
+=== RUN   TestAllTwelveDirections
+--- PASS: TestAllTwelveDirections (0.03s)
+=== RUN   TestSummary
+--- PASS: TestSummary (0.03s)
+=== RUN   TestRejectedRequestsHaveOneBoundedFailure
+=== RUN   TestRejectedRequestsHaveOneBoundedFailure/unsupported_operation
+=== RUN   TestRejectedRequestsHaveOneBoundedFailure/exhausted_hop
+=== RUN   TestRejectedRequestsHaveOneBoundedFailure/excess_hop
+=== RUN   TestRejectedRequestsHaveOneBoundedFailure/negative_hop
+=== RUN   TestRejectedRequestsHaveOneBoundedFailure/wrong_ttl
+=== RUN   TestRejectedRequestsHaveOneBoundedFailure/oversized_text
+=== RUN   TestRejectedRequestsHaveOneBoundedFailure/empty_text
+=== RUN   TestRejectedRequestsHaveOneBoundedFailure/control_characters
+=== RUN   TestRejectedRequestsHaveOneBoundedFailure/result_in_request
+--- PASS: TestRejectedRequestsHaveOneBoundedFailure (0.05s)
+    --- PASS: TestRejectedRequestsHaveOneBoundedFailure/unsupported_operation (0.01s)
+    --- PASS: TestRejectedRequestsHaveOneBoundedFailure/exhausted_hop (0.01s)
+    --- PASS: TestRejectedRequestsHaveOneBoundedFailure/excess_hop (0.01s)
+    --- PASS: TestRejectedRequestsHaveOneBoundedFailure/negative_hop (0.00s)
+    --- PASS: TestRejectedRequestsHaveOneBoundedFailure/wrong_ttl (0.00s)
+    --- PASS: TestRejectedRequestsHaveOneBoundedFailure/oversized_text (0.01s)
+    --- PASS: TestRejectedRequestsHaveOneBoundedFailure/empty_text (0.01s)
+    --- PASS: TestRejectedRequestsHaveOneBoundedFailure/control_characters (0.00s)
+    --- PASS: TestRejectedRequestsHaveOneBoundedFailure/result_in_request (0.00s)
+=== RUN   TestEveryStatusAndUnknownKindNeverTriggersTask
+=== RUN   TestEveryStatusAndUnknownKindNeverTriggersTask/task.running
+=== RUN   TestEveryStatusAndUnknownKindNeverTriggersTask/task.completed
+=== RUN   TestEveryStatusAndUnknownKindNeverTriggersTask/task.failed
+=== RUN   TestEveryStatusAndUnknownKindNeverTriggersTask/unknown
+--- PASS: TestEveryStatusAndUnknownKindNeverTriggersTask (0.01s)
+    --- PASS: TestEveryStatusAndUnknownKindNeverTriggersTask/task.running (0.00s)
+    --- PASS: TestEveryStatusAndUnknownKindNeverTriggersTask/task.completed (0.00s)
+    --- PASS: TestEveryStatusAndUnknownKindNeverTriggersTask/task.failed (0.00s)
+    --- PASS: TestEveryStatusAndUnknownKindNeverTriggersTask/unknown (0.00s)
+=== RUN   TestLeaseRedeliveryDeduplicatesStatuses
+--- PASS: TestLeaseRedeliveryDeduplicatesStatuses (0.00s)
+=== RUN   TestExplicitDestinationACLRejectsSelf
+--- PASS: TestExplicitDestinationACLRejectsSelf (0.00s)
+=== RUN   TestCommandLookingTextOnlyEchoed
+--- PASS: TestCommandLookingTextOnlyEchoed (0.00s)
+PASS
+ok  	relaynote/examples/mocktasks	0.135s
+=== RUN   TestRoundTrip
+--- PASS: TestRoundTrip (0.00s)
+=== RUN   TestJSONValidation
+=== RUN   TestJSONValidation/[]
+=== RUN   TestJSONValidation/null
+=== RUN   TestJSONValidation/1
+=== RUN   TestJSONValidation/"x"
+=== RUN   TestJSONValidation/{
+=== RUN   TestJSONValidation/{}_{}
+=== RUN   TestJSONValidation/{"to":"B","to":"A","body":"x","client_id":"k"}
+=== RUN   TestJSONValidation/{"to":"B","body":"\ud800","client_id":"k"}
+=== RUN   TestJSONValidation/{"to":"\ud800","body":"x","client_id":"k"}
+=== RUN   TestJSONValidation/{"to":"B","body":"x","client_id":"k","ttl":true}
+=== RUN   TestJSONValidation/{"to":"B","body":"x","client_id":"k","ttl":null}
+=== RUN   TestJSONValidation/{"to":"B","body":"x","client_id":"k","sender":"C"}
+--- PASS: TestJSONValidation (0.51s)
+    --- PASS: TestJSONValidation/[] (0.00s)
+    --- PASS: TestJSONValidation/null (0.00s)
+    --- PASS: TestJSONValidation/1 (0.00s)
+    --- PASS: TestJSONValidation/"x" (0.00s)
+    --- PASS: TestJSONValidation/{ (0.00s)
+    --- PASS: TestJSONValidation/{}_{} (0.00s)
+    --- PASS: TestJSONValidation/{"to":"B","to":"A","body":"x","client_id":"k"} (0.00s)
+    --- PASS: TestJSONValidation/{"to":"B","body":"\ud800","client_id":"k"} (0.00s)
+    --- PASS: TestJSONValidation/{"to":"\ud800","body":"x","client_id":"k"} (0.00s)
+    --- PASS: TestJSONValidation/{"to":"B","body":"x","client_id":"k","ttl":true} (0.00s)
+    --- PASS: TestJSONValidation/{"to":"B","body":"x","client_id":"k","ttl":null} (0.00s)
+    --- PASS: TestJSONValidation/{"to":"B","body":"x","client_id":"k","sender":"C"} (0.00s)
+=== RUN   TestUnicodeValidator
+--- PASS: TestUnicodeValidator (0.00s)
+=== RUN   TestAnyToAnyWithACLIsolation
+--- PASS: TestAnyToAnyWithACLIsolation (0.01s)
+PASS
+ok  	relaynote/internal/api	0.529s
+=== RUN   TestLoopbackJSONRoundTrip
+--- PASS: TestLoopbackJSONRoundTrip (0.00s)
+=== RUN   TestTransportDefaults
+--- PASS: TestTransportDefaults (0.00s)
+=== RUN   TestTLSVerificationAndAdditionalCA
+=== RUN   TestTLSVerificationAndAdditionalCA/unknown_CA_rejected
+=== RUN   TestTLSVerificationAndAdditionalCA/additional_CA_trusted
+=== RUN   TestTLSVerificationAndAdditionalCA/hostname_still_verified
+--- PASS: TestTLSVerificationAndAdditionalCA (0.02s)
+    --- PASS: TestTLSVerificationAndAdditionalCA/unknown_CA_rejected (0.02s)
+    --- PASS: TestTLSVerificationAndAdditionalCA/additional_CA_trusted (0.00s)
+    --- PASS: TestTLSVerificationAndAdditionalCA/hostname_still_verified (0.00s)
+=== RUN   TestInvalidConfig
+=== RUN   TestInvalidConfig/empty_origin
+=== RUN   TestInvalidConfig/relative_origin
+=== RUN   TestInvalidConfig/remote_plaintext
+=== RUN   TestInvalidConfig/localhost_is_not_literal
+=== RUN   TestInvalidConfig/private_plaintext
+=== RUN   TestInvalidConfig/lookalike_loopback
+=== RUN   TestInvalidConfig/short_IPv4_form
+=== RUN   TestInvalidConfig/integer_IPv4_form
+=== RUN   TestInvalidConfig/IPv6_remote_plaintext
+=== RUN   TestInvalidConfig/unsupported_scheme
+=== RUN   TestInvalidConfig/missing_host
+=== RUN   TestInvalidConfig/userinfo
+=== RUN   TestInvalidConfig/empty_userinfo
+=== RUN   TestInvalidConfig/query
+=== RUN   TestInvalidConfig/empty_query
+=== RUN   TestInvalidConfig/fragment
+=== RUN   TestInvalidConfig/empty_fragment
+=== RUN   TestInvalidConfig/base_path
+=== RUN   TestInvalidConfig/encoded_base_path
+=== RUN   TestInvalidConfig/encoded_base_root
+=== RUN   TestInvalidConfig/bad_port
+=== RUN   TestInvalidConfig/empty_port
+=== RUN   TestInvalidConfig/large_port
+=== RUN   TestInvalidConfig/zero_port
+=== RUN   TestInvalidConfig/unbracketed_IPv6
+=== RUN   TestInvalidConfig/empty_token
+=== RUN   TestInvalidConfig/space_in_token
+=== RUN   TestInvalidConfig/newline_in_token
+=== RUN   TestInvalidConfig/non-ASCII_token
+=== RUN   TestInvalidConfig/negative_timeout
+=== RUN   TestInvalidConfig/missing_CA
+=== RUN   TestInvalidConfig/allowed_http://127.0.0.1
+=== RUN   TestInvalidConfig/allowed_http://127.5.6.7:8080
+=== RUN   TestInvalidConfig/allowed_http://[::1]:8080
+=== RUN   TestInvalidConfig/allowed_http://[::ffff:127.0.0.1]:8080
+=== RUN   TestInvalidConfig/allowed_https://relay.example.invalid/
+--- PASS: TestInvalidConfig (0.00s)
+    --- PASS: TestInvalidConfig/empty_origin (0.00s)
+    --- PASS: TestInvalidConfig/relative_origin (0.00s)
+    --- PASS: TestInvalidConfig/remote_plaintext (0.00s)
+    --- PASS: TestInvalidConfig/localhost_is_not_literal (0.00s)
+    --- PASS: TestInvalidConfig/private_plaintext (0.00s)
+    --- PASS: TestInvalidConfig/lookalike_loopback (0.00s)
+    --- PASS: TestInvalidConfig/short_IPv4_form (0.00s)
+    --- PASS: TestInvalidConfig/integer_IPv4_form (0.00s)
+    --- PASS: TestInvalidConfig/IPv6_remote_plaintext (0.00s)
+    --- PASS: TestInvalidConfig/unsupported_scheme (0.00s)
+    --- PASS: TestInvalidConfig/missing_host (0.00s)
+    --- PASS: TestInvalidConfig/userinfo (0.00s)
+    --- PASS: TestInvalidConfig/empty_userinfo (0.00s)
+    --- PASS: TestInvalidConfig/query (0.00s)
+    --- PASS: TestInvalidConfig/empty_query (0.00s)
+    --- PASS: TestInvalidConfig/fragment (0.00s)
+    --- PASS: TestInvalidConfig/empty_fragment (0.00s)
+    --- PASS: TestInvalidConfig/base_path (0.00s)
+    --- PASS: TestInvalidConfig/encoded_base_path (0.00s)
+    --- PASS: TestInvalidConfig/encoded_base_root (0.00s)
+    --- PASS: TestInvalidConfig/bad_port (0.00s)
+    --- PASS: TestInvalidConfig/empty_port (0.00s)
+    --- PASS: TestInvalidConfig/large_port (0.00s)
+    --- PASS: TestInvalidConfig/zero_port (0.00s)
+    --- PASS: TestInvalidConfig/unbracketed_IPv6 (0.00s)
+    --- PASS: TestInvalidConfig/empty_token (0.00s)
+    --- PASS: TestInvalidConfig/space_in_token (0.00s)
+    --- PASS: TestInvalidConfig/newline_in_token (0.00s)
+    --- PASS: TestInvalidConfig/non-ASCII_token (0.00s)
+    --- PASS: TestInvalidConfig/negative_timeout (0.00s)
+    --- PASS: TestInvalidConfig/missing_CA (0.00s)
+    --- PASS: TestInvalidConfig/allowed_http://127.0.0.1 (0.00s)
+    --- PASS: TestInvalidConfig/allowed_http://127.5.6.7:8080 (0.00s)
+    --- PASS: TestInvalidConfig/allowed_http://[::1]:8080 (0.00s)
+    --- PASS: TestInvalidConfig/allowed_http://[::ffff:127.0.0.1]:8080 (0.00s)
+    --- PASS: TestInvalidConfig/allowed_https://relay.example.invalid/ (0.00s)
+=== RUN   TestUnsafeRoutesRejectedBeforeNetwork
+--- PASS: TestUnsafeRoutesRejectedBeforeNetwork (0.00s)
+=== RUN   TestRedirectsNeverFollowed
+--- PASS: TestRedirectsNeverFollowed (0.00s)
+=== RUN   TestHTTPErrorDoesNotExposeServerBody
+=== RUN   TestHTTPErrorDoesNotExposeServerBody/401
+=== RUN   TestHTTPErrorDoesNotExposeServerBody/500
+=== RUN   TestHTTPErrorDoesNotExposeServerBody/599
+--- PASS: TestHTTPErrorDoesNotExposeServerBody (0.00s)
+    --- PASS: TestHTTPErrorDoesNotExposeServerBody/401 (0.00s)
+    --- PASS: TestHTTPErrorDoesNotExposeServerBody/500 (0.00s)
+    --- PASS: TestHTTPErrorDoesNotExposeServerBody/599 (0.00s)
+=== RUN   TestResponseDecoding
+=== RUN   TestResponseDecoding/valid
+=== RUN   TestResponseDecoding/malformed
+=== RUN   TestResponseDecoding/multiple_JSON_values
+=== RUN   TestResponseDecoding/empty_with_output
+=== RUN   TestResponseDecoding/empty_without_output
+--- PASS: TestResponseDecoding (0.00s)
+    --- PASS: TestResponseDecoding/valid (0.00s)
+    --- PASS: TestResponseDecoding/malformed (0.00s)
+    --- PASS: TestResponseDecoding/multiple_JSON_values (0.00s)
+    --- PASS: TestResponseDecoding/empty_with_output (0.00s)
+    --- PASS: TestResponseDecoding/empty_without_output (0.00s)
+=== RUN   TestResponseLimit
+=== RUN   TestResponseLimit/exact_limit
+=== RUN   TestResponseLimit/over_limit
+=== RUN   TestResponseLimit/over_limit_without_output
+--- PASS: TestResponseLimit (0.48s)
+    --- PASS: TestResponseLimit/exact_limit (0.27s)
+    --- PASS: TestResponseLimit/over_limit (0.14s)
+    --- PASS: TestResponseLimit/over_limit_without_output (0.07s)
+=== RUN   TestMaximumEscapedClaimResponse
+--- PASS: TestMaximumEscapedClaimResponse (0.27s)
+=== RUN   TestContextCancellationAndTimeout
+=== RUN   TestContextCancellationAndTimeout/in-flight_cancel
+=== RUN   TestContextCancellationAndTimeout/client_timeout
+=== RUN   TestContextCancellationAndTimeout/already_canceled
+--- PASS: TestContextCancellationAndTimeout (0.05s)
+    --- PASS: TestContextCancellationAndTimeout/in-flight_cancel (0.00s)
+    --- PASS: TestContextCancellationAndTimeout/client_timeout (0.05s)
+    --- PASS: TestContextCancellationAndTimeout/already_canceled (0.00s)
+=== RUN   TestPlainHTTPRejectsAllProxyModes
+--- PASS: TestPlainHTTPRejectsAllProxyModes (0.00s)
+=== RUN   TestExplicitProxyCONNECT
+--- PASS: TestExplicitProxyCONNECT (0.00s)
+=== RUN   TestInvalidProxyConfig
+--- PASS: TestInvalidProxyConfig (0.00s)
+=== RUN   TestEnvironmentProxyOptIn
+--- PASS: TestEnvironmentProxyOptIn (0.00s)
+=== RUN   TestEnvironmentProxyHelper
+    client_test.go:632: run only in the isolated helper process
+--- SKIP: TestEnvironmentProxyHelper (0.00s)
+=== RUN   TestBadInputsDoNotReachNetwork
+--- PASS: TestBadInputsDoNotReachNetwork (0.00s)
+PASS
+ok  	relaynote/internal/client	0.863s
+=== RUN   TestRecoveryAndConflict
+--- PASS: TestRecoveryAndConflict (0.00s)
+PASS
+ok  	relaynote/internal/outbox	0.003s
+=== RUN   TestRoundtripReplyAndAckMeaning
+--- PASS: TestRoundtripReplyAndAckMeaning (0.00s)
+=== RUN   TestAuthenticationAndInboxIsolation
+--- PASS: TestAuthenticationAndInboxIsolation (0.00s)
+=== RUN   TestSenderScopedIdempotencyAndAllFingerprintFields
+--- PASS: TestSenderScopedIdempotencyAndAllFingerprintFields (0.00s)
+=== RUN   TestConcurrentSendsAndClaims
+--- PASS: TestConcurrentSendsAndClaims (0.00s)
+=== RUN   TestFIFOAndExpiredItems
+--- PASS: TestFIFOAndExpiredItems (0.00s)
+=== RUN   TestReopenAndLeaseRedelivery
+--- PASS: TestReopenAndLeaseRedelivery (0.00s)
+=== RUN   TestLeaseAndTTLExactBoundaries
+=== RUN   TestLeaseAndTTLExactBoundaries/lease
+=== RUN   TestLeaseAndTTLExactBoundaries/ttl
+--- PASS: TestLeaseAndTTLExactBoundaries (0.00s)
+    --- PASS: TestLeaseAndTTLExactBoundaries/lease (0.00s)
+    --- PASS: TestLeaseAndTTLExactBoundaries/ttl (0.00s)
+=== RUN   TestRotationRevocationAndCurrentPermissions
+--- PASS: TestRotationRevocationAndCurrentPermissions (0.00s)
+=== RUN   TestProvisionManageValidationAndDuplicateTokens
+--- PASS: TestProvisionManageValidationAndDuplicateTokens (0.00s)
+=== RUN   TestMessageAndClaimValidation
+--- PASS: TestMessageAndClaimValidation (0.00s)
+=== RUN   TestWaitingForWriteLockUsesFreshClockAndCredentials
+=== RUN   TestWaitingForWriteLockUsesFreshClockAndCredentials/clock
+=== RUN   TestWaitingForWriteLockUsesFreshClockAndCredentials/revocation
+--- PASS: TestWaitingForWriteLockUsesFreshClockAndCredentials (0.00s)
+    --- PASS: TestWaitingForWriteLockUsesFreshClockAndCredentials/clock (0.00s)
+    --- PASS: TestWaitingForWriteLockUsesFreshClockAndCredentials/revocation (0.00s)
+=== RUN   TestTokenHashesOnlyAndPublicJSON
+--- PASS: TestTokenHashesOnlyAndPublicJSON (0.00s)
+=== RUN   TestClaimRollsBackEveryLeaseOnError
+--- PASS: TestClaimRollsBackEveryLeaseOnError (0.00s)
+=== RUN   TestAuthenticationVerifiesPeerHashInsideTransaction
+--- PASS: TestAuthenticationVerifiesPeerHashInsideTransaction (0.00s)
+=== RUN   TestPrivatePathsAndExclusiveOwnership
+--- PASS: TestPrivatePathsAndExclusiveOwnership (0.96s)
+=== RUN   TestRejectUnknownSchema
+--- PASS: TestRejectUnknownSchema (0.00s)
+=== RUN   TestCrashPersistence
+--- PASS: TestCrashPersistence (0.01s)
+PASS
+ok  	relaynote/internal/store	0.981s

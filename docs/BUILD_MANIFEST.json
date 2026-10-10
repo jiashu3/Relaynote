@@ -1,0 +1,38 @@
+[
+  {
+    "filename": "relaynote-darwin-amd64",
+    "bytes": 8474224,
+    "sha256": "50e6e360fc46333050f287fdc7da64f45b4b18e8fa8160e201afa07e2304083a",
+    "runtime_tested": false
+  },
+  {
+    "filename": "relaynote-darwin-arm64",
+    "bytes": 7871266,
+    "sha256": "d6390bfe4b94146124aba98e99ea26c703c2c422fc1900881b508f3451272b3c",
+    "runtime_tested": false
+  },
+  {
+    "filename": "relaynote-linux-amd64",
+    "bytes": 8290464,
+    "sha256": "588208aaa362ca02128fcf9b3776a6deecb90d83e04de28c10450c9c1043ed7f",
+    "runtime_tested": true
+  },
+  {
+    "filename": "relaynote-linux-arm64",
+    "bytes": 7667872,
+    "sha256": "50c751c6486dbabe22fccdf25040c283c1ea0d7842a40ed3f30d5d3a315de94e",
+    "runtime_tested": false
+  },
+  {
+    "filename": "relaynote-windows-amd64.exe",
+    "bytes": 8564736,
+    "sha256": "865e4b5bb2e882dd82df3fa033341d906dcf19eee70e7d7bd955bfda479d3cdd",
+    "runtime_tested": false
+  },
+  {
+    "filename": "relaynote-windows-arm64.exe",
+    "bytes": 7785984,
+    "sha256": "c5463dc703e33d0f2ebc9edfcfe7ace95d9242e96ee44fda47892e788727977f",
+    "runtime_tested": false
+  }
+]

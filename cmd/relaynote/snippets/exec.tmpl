@@ -1,0 +1,11 @@
+Peer {{.Peer}} connected (platform: exec).
+
+On each new message the hub runs this one-liner locally:
+  {{.ExecCmd}} <notice-file.json>
+The appended argument is a JSON file {"id","kind","from","conv"}; the message
+body is never included. The command must exit 0 or the wake is retried.
+
+Peer token (Bearer, v1 API at {{.Base}}, also in {{.TokenFile}}): {{.Token}}
+
+Agent prompt fragment:
+{{.Prompt}}

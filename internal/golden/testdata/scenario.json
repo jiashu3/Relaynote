@@ -1,0 +1,213 @@
+{
+ "source": "team/gateway-src/golden/out/baseline.json (dot-bridge golden transcript)",
+ "notes": "Extracted subset: OAuth error branches, MCP protocol methods, tool argument errors, login rate limiting. {BASE} is substituted with the test issuer; {CID}/{TOKEN}/{CODE}/{RID}/{ANY} as whole values are wildcards (actual must be a non-empty value of the same JSON type). See README.md for intentional divergences.",
+ "steps": [
+  {"golden": 0, "req": "GET /.well-known/oauth-authorization-server", "status": 200,
+   "headers": {"Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store"},
+   "body": {
+    "issuer": "{BASE}",
+    "authorization_endpoint": "{BASE}/oauth/authorize",
+    "token_endpoint": "{BASE}/oauth/token",
+    "registration_endpoint": "{BASE}/oauth/register",
+    "response_types_supported": ["code"],
+    "grant_types_supported": ["authorization_code", "refresh_token"],
+    "code_challenge_methods_supported": ["S256"],
+    "token_endpoint_auth_methods_supported": ["none"],
+    "scopes_supported": ["messages:read", "messages:send", "events:subscribe"],
+    "authorization_response_iss_parameter_supported": true,
+    "client_id_metadata_document_supported": true}},
+
+  {"golden": 1, "req": "GET /.well-known/oauth-protected-resource", "status": 200,
+   "headers": {"Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store"},
+   "body": {
+    "resource": "{BASE}/mcp",
+    "authorization_servers": ["{BASE}"],
+    "scopes_supported": ["messages:read", "messages:send", "events:subscribe"],
+    "bearer_methods_supported": ["header"],
+    "resource_name": "{ANY}"}},
+
+  {"golden": 3, "req": "GET /mcp", "status": 405,
+   "headers": {"Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", "Allow": "POST"},
+   "body": {"error": "use POST"}},
+
+  {"golden": 5, "req": "POST /mcp tools/list", "status": 401,
+   "headers": {"Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store",
+    "WWW-Authenticate": "Bearer resource_metadata=\"{BASE}/.well-known/oauth-protected-resource\""},
+   "body": {"error": "invalid_token"}},
+
+  {"golden": 6, "req": "POST /mcp tools/list forged-token", "status": 401,
+   "headers": {"WWW-Authenticate": "Bearer resource_metadata=\"{BASE}/.well-known/oauth-protected-resource\", error=\"invalid_token\", error_description=\"token missing, expired or not for this resource\""},
+   "body": {"error": "invalid_token"}},
+
+  {"golden": 7, "req": "POST /oauth/register evil-redirect", "status": 400,
+   "headers": {"Content-Type": "application/json; charset=utf-8"},
+   "body": {"error": "invalid_redirect_uri", "error_description": "{ANY}"}},
+
+  {"golden": 8, "req": "POST /oauth/register ok", "status": 201,
+   "headers": {"Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store"},
+   "body": {
+    "client_id": "{CID}", "client_id_issued_at": "{ANY}",
+    "redirect_uris": ["http://127.0.0.1:18812/oauth-cb"],
+    "token_endpoint_auth_method": "none",
+    "grant_types": ["authorization_code", "refresh_token"],
+    "response_types": ["code"],
+    "client_name": "golden"}},
+
+  {"golden": 9, "req": "GET /oauth/authorize?client_id={CID}&code_challenge=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&code_challenge_method=plain&redirect_uri=http%3A%2F%2F127.0.0.1%3A18812%2Foauth-cb&response_type=code&state=s", "status": 302,
+   "headers": {"Cache-Control": "no-store", "Content-Type": "text/plain; charset=utf-8",
+    "Location": {"path": "http://127.0.0.1:18812/oauth-cb",
+     "query": {"error": "invalid_request", "error_description": "PKCE S256 code_challenge required", "state": "s", "iss": "{BASE}"}}},
+   "body": null},
+
+  {"golden": 10, "req": "GET /oauth/authorize?client_id={CID}&code_challenge=&code_challenge_method=S256&redirect_uri=http%3A%2F%2F127.0.0.1%3A18812%2Foauth-cb&response_type=code&state=s", "status": 302,
+   "headers": {"Location": {"path": "http://127.0.0.1:18812/oauth-cb",
+     "query": {"error": "invalid_request", "error_description": "PKCE S256 code_challenge required", "state": "s", "iss": "{BASE}"}}},
+   "body": null},
+
+  {"golden": 11, "req": "GET /oauth/authorize?client_id={CID}&code_challenge=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&code_challenge_method=S256&redirect_uri=https%3A%2F%2Fx.example%2F&response_type=code&state=s", "status": 400,
+   "headers": {"Content-Type": "text/html; charset=utf-8"},
+   "html_err": "unknown client or redirect_uri not allowed"},
+
+  {"golden": 12, "req": "GET /oauth/authorize login=v*50", "status": 200,
+   "headers": {"Content-Type": "text/html; charset=utf-8"}},
+  {"golden": 13, "req": "POST /oauth/authorize wrong-password", "status": 200,
+   "headers": {"Content-Type": "text/html; charset=utf-8"},
+   "html_err": "口令或验证码不正确。"},
+
+  {"golden": 14, "req": "GET /oauth/authorize login=v*50", "status": 200,
+   "headers": {"Content-Type": "text/html; charset=utf-8"}},
+  {"golden": 15, "req": "POST /oauth/authorize ok", "status": 302,
+   "headers": {"Content-Type": "text/plain; charset=utf-8",
+    "Location": {"path": "http://127.0.0.1:18812/oauth-cb",
+     "query": {"code": "{CODE}", "state": "st", "iss": "{BASE}"}},
+    "Set-Cookie": {"path": "/oauth/", "max_age": "7776000", "http_only": true, "same_site": "Lax"}},
+   "body": null},
+
+  {"golden": 16, "req": "POST /oauth/token code+wrong-verifier", "status": 400,
+   "body": {"error": "invalid_grant", "error_description": "PKCE verification failed"}},
+  {"golden": 17, "req": "POST /oauth/token unknown-code", "status": 400,
+   "body": {"error": "invalid_grant", "error_description": "unknown code"}},
+
+  {"golden": 18, "req": "GET /oauth/authorize login=w*50", "status": 200,
+   "headers": {"Content-Type": "text/html; charset=utf-8"}},
+  {"golden": 19, "req": "POST /oauth/authorize ok", "status": 302,
+   "headers": {"Location": {"path": "http://127.0.0.1:18812/oauth-cb",
+     "query": {"code": "{CODE}", "state": "st", "iss": "{BASE}"}},
+    "Set-Cookie": {"path": "/oauth/", "max_age": "7776000", "http_only": true, "same_site": "Lax"}},
+   "body": null},
+
+  {"golden": 20, "req": "POST /oauth/token authorization_code", "status": 200,
+   "headers": {"Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", "Pragma": "no-cache"},
+   "body": {"access_token": "{TOKEN}", "token_type": "Bearer", "expires_in": 3600,
+    "refresh_token": "{TOKEN}", "scope": "messages:read messages:send events:subscribe"}},
+
+  {"golden": 21, "req": "POST /oauth/token refresh_token", "status": 200,
+   "headers": {"Pragma": "no-cache"},
+   "body": {"access_token": "{TOKEN}", "token_type": "Bearer", "expires_in": 3600,
+    "refresh_token": "{TOKEN}", "scope": "messages:read messages:send events:subscribe"}},
+
+  {"golden": 22, "req": "POST /oauth/token refresh-replay", "status": 400,
+   "body": {"error": "invalid_grant", "error_description": "refresh token already used"}},
+
+  {"golden": 23, "req": "POST /mcp ping revoked-family-token", "status": 401,
+   "headers": {"WWW-Authenticate": "Bearer resource_metadata=\"{BASE}/.well-known/oauth-protected-resource\", error=\"invalid_token\", error_description=\"token missing, expired or not for this resource\""},
+   "body": {"error": "invalid_token"}},
+
+  {"golden": 24, "req": "GET /oauth/authorize login=z*50", "status": 200,
+   "headers": {"Content-Type": "text/html; charset=utf-8"}},
+  {"golden": 25, "req": "POST /oauth/authorize ok", "status": 302,
+   "headers": {"Location": {"path": "http://127.0.0.1:18812/oauth-cb",
+     "query": {"code": "{CODE}", "state": "st", "iss": "{BASE}"}},
+    "Set-Cookie": {"path": "/oauth/", "max_age": "7776000", "http_only": true, "same_site": "Lax"}},
+   "body": null},
+  {"golden": 26, "req": "POST /oauth/token authorization_code", "status": 200,
+   "body": {"access_token": "{TOKEN}", "token_type": "Bearer", "expires_in": 3600,
+    "refresh_token": "{TOKEN}", "scope": "messages:read messages:send events:subscribe"}},
+
+  {"golden": 27, "req": "POST /mcp server/discover", "status": 200, "mode": "shape",
+   "body": {"jsonrpc": "2.0", "id": 1, "result": {
+    "resultType": "complete",
+    "supportedVersions": ["2026-07-28", "2025-11-25", "2025-06-18", "2025-03-26"],
+    "capabilities": {"tools": {}, "events": {}},
+    "serverInfo": {"name": "dot-bridge", "title": "Relaynote · Grok Bot", "version": "1.0.0"},
+    "instructions": "..."}},
+   "exact_keys": ["resultType", "supportedVersions"]},
+
+  {"golden": 28, "req": "POST /mcp initialize", "status": 200, "mode": "shape",
+   "body": {"jsonrpc": "2.0", "id": 1, "result": {
+    "protocolVersion": "2025-06-18",
+    "capabilities": {"tools": {}, "events": {}},
+    "serverInfo": {"name": "dot-bridge", "title": "Relaynote · Grok Bot", "version": "1.0.0"},
+    "instructions": "..."}},
+   "exact_keys": ["protocolVersion"]},
+
+  {"golden": 29, "req": "POST /mcp tools/list", "status": 200, "mode": "tools",
+   "tools": {"read_messages": ["messages:read", "events:subscribe"], "send_message": ["messages:send"]}},
+
+  {"golden": 30, "req": "POST /mcp resources/list", "status": 200,
+   "body": {"jsonrpc": "2.0", "id": 1, "result": {"resources": []}}},
+
+  {"golden": 31, "req": "POST /mcp nope/nope", "status": 200,
+   "body": {"jsonrpc": "2.0", "id": 1, "error": {"code": -32601, "message": "Method not found"}}},
+
+  {"golden": 32, "req": "POST /mcp tools/call unknown-tool", "status": 200,
+   "body": {"jsonrpc": "2.0", "id": 1, "error": {"code": -32602, "message": "Unknown tool"}}},
+
+  {"golden": 33, "req": "POST /mcp tools/call send_message no-text", "status": 200,
+   "body": {"jsonrpc": "2.0", "id": 1, "result": {
+    "content": [{"type": "text", "text": "{\"error\": \"invalid_arguments\", \"message\": \"text is required\"}"}],
+    "structuredContent": {"error": "invalid_arguments", "message": "text is required"},
+    "isError": true}}},
+
+  {"golden": 34, "req": "POST /mcp tools/call send_message to=manus-cue", "status": 200,
+   "ignore_keys": ["message"],
+   "body": {"jsonrpc": "2.0", "id": 1, "result": {
+    "content": [{"type": "text", "text": "{ANY}"}],
+    "structuredContent": {"error": "recipient_not_allowed", "message": "{ANY}"},
+    "isError": true}}},
+
+  {"golden": 35, "req": "POST /mcp tools/call send_message bogus-arg", "status": 200,
+   "body": {"jsonrpc": "2.0", "id": 1, "result": {
+    "content": [{"type": "text", "text": "{\"error\": \"invalid_arguments\", \"message\": \"unknown arguments: ['bogus']\"}"}],
+    "structuredContent": {"error": "invalid_arguments", "message": "unknown arguments: ['bogus']"},
+    "isError": true}}},
+
+  {"golden": 36, "req": "POST /mcp tools/call send_message too-long", "status": 200,
+   "body": {"jsonrpc": "2.0", "id": 1, "result": {
+    "content": [{"type": "text", "text": "{\"error\": \"text_too_long\", \"message\": \"text exceeds 8000 characters\"}"}],
+    "structuredContent": {"error": "text_too_long", "message": "text exceeds 8000 characters"},
+    "isError": true}}},
+
+  {"golden": 79, "req": "POST /mcp tools/call read_messages limit=99", "status": 200,
+   "body": {"jsonrpc": "2.0", "id": 1, "result": {
+    "content": [{"type": "text", "text": "{\"error\": \"invalid_arguments\", \"message\": \"limit must be 1..10\"}"}],
+    "structuredContent": {"error": "invalid_arguments", "message": "limit must be 1..10"},
+    "isError": true}}},
+
+  {"golden": 83, "req": "POST /mcp tools/call send_message reply_to=unknown", "status": 200,
+   "ignore_keys": ["message"],
+   "body": {"jsonrpc": "2.0", "id": 1, "result": {
+    "content": [{"type": "text", "text": "{ANY}"}],
+    "structuredContent": {"error": "unknown_message", "message": "{ANY}"},
+    "isError": true}}},
+
+  {"golden": 139, "req": "GET /oauth/authorize lockout=1", "status": 200, "headers": {"Content-Type": "text/html; charset=utf-8"}},
+  {"golden": 140, "req": "POST /oauth/authorize lockout=1", "status": 200, "html_err": "口令或验证码不正确。"},
+  {"golden": 141, "req": "GET /oauth/authorize lockout=2", "status": 200, "headers": {"Content-Type": "text/html; charset=utf-8"}},
+  {"golden": 142, "req": "POST /oauth/authorize lockout=2", "status": 200, "html_err": "口令或验证码不正确。"},
+  {"golden": 143, "req": "GET /oauth/authorize lockout=3", "status": 200, "headers": {"Content-Type": "text/html; charset=utf-8"}},
+  {"golden": 144, "req": "POST /oauth/authorize lockout=3", "status": 200, "html_err": "口令或验证码不正确。"},
+  {"golden": 145, "req": "GET /oauth/authorize lockout=4", "status": 200, "headers": {"Content-Type": "text/html; charset=utf-8"}},
+  {"golden": 146, "req": "POST /oauth/authorize lockout=4", "status": 200, "html_err": "口令或验证码不正确。"},
+  {"golden": 147, "req": "GET /oauth/authorize lockout=5", "status": 200, "headers": {"Content-Type": "text/html; charset=utf-8"}},
+  {"golden": 148, "req": "POST /oauth/authorize lockout=5", "status": 200, "html_err": "口令或验证码不正确。"},
+  {"golden": 149, "req": "GET /oauth/authorize lockout=6", "status": 200, "headers": {"Content-Type": "text/html; charset=utf-8"}},
+  {"golden": 150, "req": "POST /oauth/authorize lockout=6", "status": 200, "html_err": "这台设备/网络失败次数过多，已锁定 15 分钟，请稍后再试。"},
+  {"golden": 151, "req": "GET /oauth/authorize locked-final", "status": 200, "headers": {"Content-Type": "text/html; charset=utf-8"}},
+  {"golden": 152, "req": "POST /oauth/authorize locked-final", "status": 200, "html_err": "这台设备/网络失败次数过多，已锁定 15 分钟，请稍后再试。"},
+
+  {"golden": 153, "req": "POST /oauth/authorize origin=evil", "status": 403,
+   "headers": {"Content-Type": "text/html; charset=utf-8"},
+   "html_err": "来源不对。"}
+ ]
+}

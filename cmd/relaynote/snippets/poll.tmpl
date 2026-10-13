@@ -1,0 +1,13 @@
+Peer {{.Peer}} connected (platform: poll).
+
+This peer receives no push; it long-polls the hub:
+  GET {{.Base}}/v1/inbox/wait?timeout=30&after=CURSOR
+  Authorization: Bearer {{.Token}}
+  Reconnect with the returned cursor to never miss messages. The hub must run
+  with --longpoll. Equivalent one-line CLI:
+  relaynote --url {{.Base}} --token-file {{.TokenFile}} inbox
+
+Peer token (also in {{.TokenFile}}): {{.Token}}
+
+Agent prompt fragment:
+{{.Prompt}}

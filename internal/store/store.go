@@ -4,6 +4,7 @@
 package store
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -18,6 +19,7 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -37,10 +39,24 @@ var (
 	dedupeBucket   = []byte("dedupe")
 	inboxesBucket  = []byte("inboxes")
 	metadataBucket = []byte("metadata")
-	namePattern    = regexp.MustCompile(`^[a-zA-Z0-9_.-]{1,64}$`)
-	idPattern      = regexp.MustCompile(`^[a-zA-Z0-9_.:-]{1,128}$`)
-	tokenPattern   = regexp.MustCompile(`^[A-Za-z0-9_-]{43}$`)
-	receiptPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{32}$`)
+	requestsBucket = []byte("requests")
+	// Buckets for the opt-in P2 layers (internal/oauth and internal/events).
+	// They are created alongside the core buckets so one database file holds
+	// all hub state; with the serve flags off they simply stay empty.
+	oauthClientsBucket  = []byte("oauth_clients")
+	oauthRequestsBucket = []byte("oauth_requests")
+	oauthCodesBucket    = []byte("oauth_codes")
+	oauthTokensBucket   = []byte("oauth_tokens")
+	oauthKVBucket       = []byte("oauth_kv")
+	oauthDevicesBucket  = []byte("oauth_devices")
+	oauthFailuresBucket = []byte("oauth_login_failures")
+	eventSubsBucket     = []byte("event_subscriptions")
+	eventVerifiedBucket = []byte("event_verified_callbacks")
+	eventOutboxBucket   = []byte("event_outbox")
+	namePattern         = regexp.MustCompile(`^[a-zA-Z0-9_.-]{1,64}$`)
+	idPattern           = regexp.MustCompile(`^[a-zA-Z0-9_.:-]{1,128}$`)
+	tokenPattern        = regexp.MustCompile(`^[A-Za-z0-9_-]{43}$`)
+	receiptPattern      = regexp.MustCompile(`^[A-Za-z0-9_-]{32}$`)
 )
 
 // Error is a request error whose Status may be exposed by the HTTP layer.
@@ -63,6 +79,11 @@ type SendRequest struct {
 	Body     string `json:"body"`
 	ClientID string `json:"client_id"`
 	TTL      int    `json:"ttl"`
+	// Optional native envelope fields (P0); accepted by the HTTP layer only
+	// when its envelope option is enabled.
+	Kind string `json:"kind,omitempty"`
+	Conv string `json:"conv,omitempty"`
+	Hop  int    `json:"hop,omitempty"`
 }
 
 // Message is the public wire representation. Receipt and LeaseUntil are exposed
@@ -74,6 +95,9 @@ type Message struct {
 	ClientID      string   `json:"client_id"`
 	ThreadID      string   `json:"thread_id"`
 	ReplyTo       *string  `json:"reply_to"`
+	Kind          string   `json:"kind,omitempty"`
+	Conv          string   `json:"conv,omitempty"`
+	Hop           int      `json:"hop,omitempty"`
 	Body          string   `json:"body"`
 	CreatedAt     float64  `json:"created_at"`
 	ExpiresAt     float64  `json:"expires_at"`
@@ -83,6 +107,9 @@ type Message struct {
 	AgentAwakened string   `json:"agent_awakened"`
 	Receipt       string   `json:"receipt,omitempty"`
 	LeaseUntil    float64  `json:"lease_until,omitempty"`
+	// Created is set by Send when the message was newly persisted (never on an
+	// idempotent replay). It is internal-only and never serialized.
+	Created bool `json:"-"`
 }
 
 type peer struct {
@@ -108,6 +135,16 @@ type Store struct {
 	// Now is an optional clock for deterministic tests. Set it before concurrent
 	// use; the supplied function itself must be safe for concurrent calls.
 	Now func() time.Time
+
+	// Lifecycle opts in to request lifecycle tracking (P0): Send of a message
+	// with Kind "request" then also opens a Request record, and StartRequest,
+	// CompleteRequest and GetRequest become available. Default off.
+	Lifecycle bool
+
+	// notify is closed and replaced on every committed new message, waking
+	// any WaitInbox long-polls.
+	notifyMu sync.Mutex
+	notify   chan struct{}
 }
 
 // New opens a durable queue in a trusted, private directory. The final directory
@@ -150,7 +187,7 @@ func New(path string) (*Store, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("make database private: %w", err)
 	}
-	s := &Store{db: db}
+	s := &Store{db: db, notify: make(chan struct{})}
 	err = db.Update(func(tx *bolt.Tx) error {
 		meta, err := tx.CreateBucketIfNotExists(metadataBucket)
 		if err != nil {
@@ -160,7 +197,9 @@ func New(path string) (*Store, error) {
 		if version != nil && string(version) != "1" {
 			return fmt.Errorf("unsupported database schema %q", version)
 		}
-		for _, name := range [][]byte{peersBucket, tokensBucket, messagesBucket, dedupeBucket, inboxesBucket} {
+		for _, name := range [][]byte{peersBucket, tokensBucket, messagesBucket, dedupeBucket, inboxesBucket, requestsBucket,
+			oauthClientsBucket, oauthRequestsBucket, oauthCodesBucket, oauthTokensBucket, oauthKVBucket,
+			oauthDevicesBucket, oauthFailuresBucket, eventSubsBucket, eventVerifiedBucket, eventOutboxBucket} {
 			if _, err := tx.CreateBucketIfNotExists(name); err != nil {
 				return err
 			}
@@ -175,6 +214,58 @@ func New(path string) (*Store, error) {
 }
 
 func (s *Store) Close() error { return s.db.Close() }
+
+// NewReadOnly opens the database in shared read-only mode, so diagnostics can
+// run alongside a live hub. It never creates buckets or modifies the file.
+func NewReadOnly(path string) (*Store, error) {
+	if strings.TrimSpace(path) == "" {
+		return nil, errors.New("database path is required")
+	}
+	path = filepath.Clean(path)
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil, fmt.Errorf("inspect database: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, errors.New("database must be a regular file, not a symlink")
+	}
+	db, err := bolt.Open(path, 0600, &bolt.Options{ReadOnly: true, Timeout: time.Second})
+	if err != nil {
+		return nil, fmt.Errorf("open database read-only: %w", err)
+	}
+	return &Store{db: db, notify: make(chan struct{})}, nil
+}
+
+// PeerInfo is the administrative view of one peer used by diagnostics.
+type PeerInfo struct {
+	Name    string
+	Allowed []string
+	Enabled bool
+}
+
+// PeerInfo returns the peer's enabled state and ACL edges. found is false
+// when no such peer exists.
+func (s *Store) PeerInfo(name string) (info PeerInfo, found bool, err error) {
+	err = s.db.View(func(tx *bolt.Tx) error {
+		p, err := loadPeer(tx, name)
+		if err != nil {
+			return err
+		}
+		if p == nil {
+			return nil
+		}
+		found = true
+		info = PeerInfo{Name: p.Name, Allowed: append([]string{}, p.Allowed...), Enabled: p.Enabled}
+		return nil
+	})
+	return info, found, err
+}
+
+// DB exposes the underlying bbolt database for the opt-in P2 layers
+// (internal/oauth and internal/events), which keep their state in their own
+// buckets of the same file. Callers must treat it as read/write only through
+// those packages; the bucket names above are reserved.
+func (s *Store) DB() *bolt.DB { return s.db }
 
 // NewToken generates a 256-bit URL-safe bearer token. Only its SHA-256 digest is
 // persisted by Provision and Manage; the caller controls secure token delivery.
@@ -406,6 +497,15 @@ func validateSend(data SendRequest, replyTo string) error {
 	if data.TTL < 1 || data.TTL > MaxTTL {
 		return requestError(400, "ttl must be between 1 and 2592000")
 	}
+	if data.Kind != "" && !namePattern.MatchString(data.Kind) {
+		return requestError(400, "kind must be 1-64 identifier characters")
+	}
+	if data.Conv != "" && !idPattern.MatchString(data.Conv) {
+		return requestError(400, "conv must be 1-128 identifier characters")
+	}
+	if data.Hop < 0 || data.Hop > 100 {
+		return requestError(400, "hop must be between 0 and 100")
+	}
 	if replyTo == "" {
 		return validName(data.To)
 	}
@@ -442,22 +542,76 @@ func fingerprint(data SendRequest, replyTo string) (string, error) {
 // checks sender-scoped idempotency, and persists the new message and indexes.
 func (s *Store) Send(token string, data SendRequest, replyTo string) (Message, error) {
 	var out Message
+	created := false
 	err := s.db.Update(func(tx *bolt.Tx) error {
 		actor, err := authenticate(tx, token)
 		if err != nil {
 			return err
 		}
+		out, created, err = s.sendTx(tx, actor.Name, data, replyTo)
+		return err
+	})
+	if err != nil {
+		return Message{}, err
+	}
+	if created {
+		out.Created = true
+		s.signal()
+	}
+	return out, nil
+}
+
+// SendAs behaves like Send for an already-authenticated peer, used by the MCP
+// adapter whose callers hold OAuth access tokens rather than hub tokens.
+func (s *Store) SendAs(name string, data SendRequest, replyTo string) (Message, error) {
+	var out Message
+	created := false
+	err := s.db.Update(func(tx *bolt.Tx) error {
+		actor, err := activePeer(tx, name)
+		if err != nil {
+			return err
+		}
+		out, created, err = s.sendTx(tx, actor.Name, data, replyTo)
+		return err
+	})
+	if err != nil {
+		return Message{}, err
+	}
+	if created {
+		out.Created = true
+		s.signal()
+	}
+	return out, nil
+}
+
+// activePeer loads a peer that must exist and be enabled.
+func activePeer(tx *bolt.Tx, name string) (*peer, error) {
+	p, err := loadPeer(tx, name)
+	if err != nil {
+		return nil, err
+	}
+	if p == nil || !p.Enabled {
+		return nil, requestError(403, "node is disabled or unknown")
+	}
+	return p, nil
+}
+
+func (s *Store) sendTx(tx *bolt.Tx, sender string, data SendRequest, replyTo string) (Message, bool, error) {
+	var out Message
+	created := false
+	err := func() error {
 		if err := validateSend(data, replyTo); err != nil {
 			return err
 		}
 		var parent *record
 		recipient := data.To
 		if replyTo != "" {
+			var err error
 			parent, err = loadRecord(tx, replyTo)
 			if err != nil {
 				return err
 			}
-			if parent == nil || parent.Message.Recipient != actor.Name {
+			if parent == nil || parent.Message.Recipient != sender {
 				return requestError(404, "reply target not found in your inbox")
 			}
 			recipient = parent.Message.Sender
@@ -470,6 +624,10 @@ func (s *Store) Send(token string, data SendRequest, replyTo string) (Message, e
 			return requestError(403, "node is disabled or unknown")
 		}
 		allowed := false
+		actor, err := loadPeer(tx, sender)
+		if err != nil {
+			return err
+		}
 		for _, name := range actor.Allowed {
 			if name == "*" || name == recipient {
 				allowed = true
@@ -483,7 +641,7 @@ func (s *Store) Send(token string, data SendRequest, replyTo string) (Message, e
 		if err != nil {
 			return err
 		}
-		key := []byte(actor.Name + "\x00" + data.ClientID)
+		key := []byte(sender + "\x00" + data.ClientID)
 		dedupe := tx.Bucket(dedupeBucket)
 		now := s.now() // Capture after acquiring the write lock, never before it.
 		if id := dedupe.Get(key); id != nil {
@@ -512,8 +670,9 @@ func (s *Store) Send(token string, data SendRequest, replyTo string) (Message, e
 			return err
 		}
 		r := record{Message: Message{
-			ID: id, Sender: actor.Name, Recipient: recipient, ClientID: data.ClientID,
+			ID: id, Sender: sender, Recipient: recipient, ClientID: data.ClientID,
 			ThreadID: id, Body: data.Body, CreatedAt: now, ExpiresAt: now + float64(data.TTL),
+			Kind: data.Kind, Conv: data.Conv, Hop: data.Hop,
 		}, Fingerprint: fp, Sequence: seq}
 		if parent != nil {
 			r.Message.ThreadID = parent.Message.ThreadID
@@ -521,6 +680,12 @@ func (s *Store) Send(token string, data SendRequest, replyTo string) (Message, e
 		}
 		if err := saveRecord(tx, &r); err != nil {
 			return err
+		}
+		if s.Lifecycle && data.Kind == "request" {
+			q := Request{ID: id, State: RequestReceived, Seq: 1, Deadline: r.Message.ExpiresAt, UpdatedAt: now}
+			if err := saveRequest(tx, &q); err != nil {
+				return err
+			}
 		}
 		if err := dedupe.Put(key, []byte(id)); err != nil {
 			return err
@@ -534,13 +699,100 @@ func (s *Store) Send(token string, data SendRequest, replyTo string) (Message, e
 		if err := inbox.Put(order[:], []byte(id)); err != nil {
 			return err
 		}
+		created = true
 		out = public(&r, now, false)
+		return nil
+	}()
+	return out, created, err
+}
+
+// signal wakes every WaitInbox long-poll so it can re-scan its inbox.
+func (s *Store) signal() {
+	s.notifyMu.Lock()
+	close(s.notify)
+	s.notify = make(chan struct{})
+	s.notifyMu.Unlock()
+}
+
+// PeerName resolves a bearer token to its peer name.
+func (s *Store) PeerName(token string) (string, error) {
+	var name string
+	err := s.db.View(func(tx *bolt.Tx) error {
+		p, err := authenticate(tx, token)
+		if err != nil {
+			return err
+		}
+		name = p.Name
+		return nil
+	})
+	return name, err
+}
+
+// WaitInbox returns up to 100 unacknowledged, unexpired messages with an
+// inbox sequence greater than after, along with the highest sequence scanned
+// (the cursor for the next call). When nothing is available it blocks until
+// a new message is committed or ctx expires; on timeout it returns an empty
+// slice with the cursor unchanged, so reconnecting with the cursor never
+// misses messages delivered while disconnected.
+func (s *Store) WaitInbox(ctx context.Context, token string, after uint64) ([]Message, uint64, error) {
+	for {
+		msgs, cursor, err := s.scanInbox(token, after)
+		if err != nil {
+			return nil, after, err
+		}
+		if len(msgs) > 0 || cursor != after {
+			return msgs, cursor, nil
+		}
+		s.notifyMu.Lock()
+		ch := s.notify
+		s.notifyMu.Unlock()
+		select {
+		case <-ch:
+		case <-ctx.Done():
+			return []Message{}, after, nil
+		}
+	}
+}
+
+func (s *Store) scanInbox(token string, after uint64) ([]Message, uint64, error) {
+	msgs := []Message{}
+	cursor := after
+	err := s.db.View(func(tx *bolt.Tx) error {
+		actor, err := authenticate(tx, token)
+		if err != nil {
+			return err
+		}
+		inbox := tx.Bucket(inboxesBucket).Bucket([]byte(actor.Name))
+		if inbox == nil {
+			return nil
+		}
+		now := s.now()
+		var start [8]byte
+		binary.BigEndian.PutUint64(start[:], after+1)
+		c := inbox.Cursor()
+		for key, id := c.Seek(start[:]); key != nil; key, id = c.Next() {
+			if len(msgs) >= 100 {
+				break
+			}
+			r, err := loadRecord(tx, string(id))
+			if err != nil {
+				return err
+			}
+			if r == nil || r.Message.Recipient != actor.Name {
+				return errors.New("message inbox index is inconsistent")
+			}
+			seq := binary.BigEndian.Uint64(key)
+			if r.Message.AckedAt == nil && r.Message.ExpiresAt > now {
+				msgs = append(msgs, public(r, now, false))
+			}
+			cursor = seq
+		}
 		return nil
 	})
 	if err != nil {
-		return Message{}, err
+		return nil, after, err
 	}
-	return out, nil
+	return msgs, cursor, nil
 }
 
 // Claim leases eligible messages in enqueue order. Concurrent claims cannot
@@ -646,21 +898,82 @@ func (s *Store) Get(token, id string) (Message, error) {
 		if err != nil {
 			return err
 		}
-		if !idPattern.MatchString(id) {
-			return requestError(400, "invalid message id")
-		}
-		r, err := loadRecord(tx, id)
-		if err != nil {
-			return err
-		}
-		if r == nil || (r.Message.Sender != actor.Name && r.Message.Recipient != actor.Name) {
-			return requestError(404, "message not found")
-		}
-		out = public(r, s.now(), false)
-		return nil
+		out, err = getTx(tx, s.now(), actor.Name, id)
+		return err
 	})
 	if err != nil {
 		return Message{}, err
+	}
+	return out, nil
+}
+
+// GetAs behaves like Get for an already-authenticated peer (the MCP adapter).
+func (s *Store) GetAs(name, id string) (Message, error) {
+	var out Message
+	err := s.db.View(func(tx *bolt.Tx) error {
+		actor, err := activePeer(tx, name)
+		if err != nil {
+			return err
+		}
+		out, err = getTx(tx, s.now(), actor.Name, id)
+		return err
+	})
+	if err != nil {
+		return Message{}, err
+	}
+	return out, nil
+}
+
+func getTx(tx *bolt.Tx, now float64, name, id string) (Message, error) {
+	if !idPattern.MatchString(id) {
+		return Message{}, requestError(400, "invalid message id")
+	}
+	r, err := loadRecord(tx, id)
+	if err != nil {
+		return Message{}, err
+	}
+	if r == nil || (r.Message.Sender != name && r.Message.Recipient != name) {
+		return Message{}, requestError(404, "message not found")
+	}
+	return public(r, now, false), nil
+}
+
+// PeekInboxAs returns up to limit unexpired messages in the peer's inbox,
+// newest first, without leasing or acknowledging them. With unackedOnly,
+// acknowledged messages are skipped; with conv non-empty, only messages of
+// that conversation are returned. Used by the MCP read_messages tool.
+func (s *Store) PeekInboxAs(name string, limit int, conv string, unackedOnly bool) ([]Message, error) {
+	out := []Message{}
+	err := s.db.View(func(tx *bolt.Tx) error {
+		if _, err := activePeer(tx, name); err != nil {
+			return err
+		}
+		inbox := tx.Bucket(inboxesBucket).Bucket([]byte(name))
+		if inbox == nil {
+			return nil
+		}
+		now := s.now()
+		c := inbox.Cursor()
+		for key, id := c.Last(); key != nil && len(out) < limit; key, id = c.Prev() {
+			r, err := loadRecord(tx, string(id))
+			if err != nil {
+				return err
+			}
+			if r == nil || r.Message.Recipient != name {
+				return errors.New("message inbox index is inconsistent")
+			}
+			if r.Message.ExpiresAt <= now || (unackedOnly && r.Message.AckedAt != nil) {
+				continue
+			}
+			if conv != "" && r.Message.Conv != conv && r.Message.ThreadID != conv {
+				continue
+			}
+			out = append(out, public(r, now, false))
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	return out, nil
 }

@@ -1,0 +1,14 @@
+Peer {{.Peer}} connected (platform: mcp).
+
+Paste into the MCP client's configuration:
+  MCP URL: {{.Base}}/mcp
+  Auth: OAuth 2.1 with PKCE (S256). Register a public client through dynamic
+  client registration at {{.Base}}/oauth/register, then complete the
+  authorization-code flow. Scopes: messages:read messages:send events:subscribe.
+  The hub must run with: relaynote --db {{.DB}} serve --oauth-issuer {{.Base}} --oauth-config oauth.json --mcp --wake-config {{.WakeConfig}}
+  Wake notices arrive as signed message.created event callbacks.
+
+Peer token (v1 API at {{.Base}}, also in {{.TokenFile}}): {{.Token}}
+
+Agent prompt fragment:
+{{.Prompt}}

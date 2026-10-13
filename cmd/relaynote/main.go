@@ -17,8 +17,12 @@ import (
 	"regexp"
 	"relaynote/internal/api"
 	"relaynote/internal/client"
+	"relaynote/internal/events"
+	"relaynote/internal/mcp"
+	"relaynote/internal/oauth"
 	"relaynote/internal/outbox"
 	"relaynote/internal/store"
+	"relaynote/internal/wake"
 	"runtime"
 	"strings"
 	"syscall"
@@ -26,6 +30,18 @@ import (
 )
 
 const version = "0.3.0-preview"
+
+// defaultHubURL is the hub URL used when neither flags, RELAYNOTE_URL, nor a
+// URL recorded by hub init say otherwise.
+const defaultHubURL = "http://127.0.0.1:8787"
+
+// hubURLDefault is the global --url default: RELAYNOTE_URL when set.
+func hubURLDefault() string {
+	if u := strings.TrimSpace(os.Getenv("RELAYNOTE_URL")); u != "" {
+		return u
+	}
+	return defaultHubURL
+}
 
 func main() {
 	if err := run(os.Args[1:], os.Stdout); err != nil {
@@ -42,7 +58,7 @@ func flags(name string) *flag.FlagSet {
 func run(args []string, out io.Writer) error {
 	global := flags("relaynote")
 	db := global.String("db", "state/relaynote.db", "local hub database")
-	base := global.String("url", "http://127.0.0.1:8787", "hub URL; remote URLs require HTTPS")
+	base := global.String("url", hubURLDefault(), "hub URL (default: RELAYNOTE_URL, else "+defaultHubURL+"); remote URLs require HTTPS")
 	tokenFile := global.String("token-file", "", "private node token file")
 	ca := global.String("ca-file", "", "additional trusted CA PEM file")
 	proxy := global.String("proxy", "", "explicit HTTP(S) proxy URL")
@@ -52,14 +68,29 @@ func run(args []string, out io.Writer) error {
 	if err := global.Parse(args); err != nil {
 		return err
 	}
+	urlSet := false
+	global.Visit(func(fl *flag.Flag) {
+		if fl.Name == "url" {
+			urlSet = true
+		}
+	})
 	if global.NArg() == 0 {
-		return errors.New("usage: relaynote [global flags] provision|manage|serve|send|reply|claim|ack|get|flush|version; see README.md")
+		return errors.New("usage: relaynote [global flags] hub|connect|doctor|provision|manage|serve|send|reply|inbox|status|claim|ack|get|flush|version; see README.md")
 	}
 	command, rest := global.Arg(0), global.Args()[1:]
 	if command == "version" {
 		return emit(out, map[string]string{"version": version, "protocol": "tailmsg-v1", "os": runtime.GOOS, "arch": runtime.GOARCH, "developer": "涟漪工场有限公司（Ripplelab Limited）", "website": "https://www.ripplelab.hk/"})
 	}
 	switch command {
+	case "hub":
+		if len(rest) == 0 || rest[0] != "init" {
+			return errors.New("usage: relaynote hub init [--dir DIR] [--url URL]")
+		}
+		return hubInit(rest[1:], out)
+	case "connect":
+		return connect(rest, *db, *base, urlSet, out)
+	case "doctor":
+		return doctor(rest, *db, *base, *tokenFile, *timeout, out)
 	case "provision", "manage":
 		return admin(command, rest, *db, out)
 	case "serve":
@@ -203,7 +234,7 @@ func run(args []string, out io.Writer) error {
 			return fmt.Errorf("%d pending submissions retained; other entries processed", failures)
 		}
 		return nil
-	case "claim":
+	case "claim", "inbox":
 		limit := f.Int("limit", 10, "maximum claims")
 		lease := f.Int("lease", 300, "lease seconds")
 		if err = f.Parse(rest); err != nil {
@@ -211,6 +242,12 @@ func run(args []string, out io.Writer) error {
 		}
 		body = map[string]int{"limit": *limit, "lease": *lease}
 		route = "/v1/inbox/claim"
+	case "status":
+		if err = f.Parse(rest); err != nil {
+			return err
+		}
+		route = "/v1/wake/status"
+		method = http.MethodGet
 	case "ack":
 		id := f.String("id", "", "message ID")
 		receipt := f.String("receipt", "", "lease receipt (use --receipt=VALUE)")
@@ -338,6 +375,13 @@ func serve(args []string, path string, out io.Writer) error {
 	cert := f.String("tls-cert", "", "TLS certificate PEM file")
 	key := f.String("tls-key", "", "TLS private key PEM file")
 	remote := f.Bool("allow-remote", false, "explicitly allow non-loopback TLS listener")
+	envelope := f.Bool("envelope", false, "accept optional kind/conv/hop envelope fields and legacy body envelopes")
+	lifecycle := f.Bool("lifecycle", false, "track request lifecycle (received/running/final/timed_out/late) for kind=request messages")
+	wakeConfig := f.String("wake-config", "", "JSON wake adapter/gate config; enables wake notices and GET /v1/wake/status")
+	longpoll := f.Bool("longpoll", false, "enable GET /v1/inbox/wait long-polling for push-less agents")
+	oauthIssuer := f.String("oauth-issuer", "", "public base URL of the hub; enables the OAuth 2.1 authorization server endpoints")
+	oauthConfig := f.String("oauth-config", "", "JSON OAuth config (peer, auth_file, redirect allow-lists); required with --oauth-issuer")
+	mcpFlag := f.Bool("mcp", false, "enable the MCP endpoint /mcp (requires --oauth-issuer and --oauth-config)")
 	if err := f.Parse(args); err != nil {
 		return err
 	}
@@ -369,14 +413,45 @@ func serve(args []string, path string, out io.Writer) error {
 		return err
 	}
 	defer s.Close()
+	s.Lifecycle = *lifecycle
+	handler := api.New(s)
+	handler.Envelope = *envelope
+	handler.LongPoll = *longpoll
+	var wakeSvc *wake.Service
+	var wakeCfg wake.Config
+	if *wakeConfig != "" {
+		cfg, e := wake.LoadConfig(*wakeConfig)
+		if e != nil {
+			return e
+		}
+		wakeCfg = cfg
+		if handler.Wake, e = wake.NewService(cfg); e != nil {
+			return e
+		}
+		wakeSvc = handler.Wake
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	var httpHandler http.Handler = handler
+	if *oauthIssuer != "" || *mcpFlag {
+		gw, ev, err := buildGateway(s, *oauthIssuer, *oauthConfig, *mcpFlag, handler)
+		if err != nil {
+			return err
+		}
+		httpHandler = gw
+		if ev != nil {
+			if wakeSvc != nil {
+				wireEventSinks(wakeSvc, wakeCfg, ev)
+			}
+			go ev.RunDeliverLoop(ctx, 15*time.Second)
+		}
+	}
 	listener, err := net.Listen("tcp", *listen)
 	if err != nil {
 		return err
 	}
 	defer listener.Close()
-	server := &http.Server{Handler: api.New(s), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 8192, TLSConfig: tlsConfig}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
+	server := &http.Server{Handler: httpHandler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 8192, TLSConfig: tlsConfig}
 	shutdownDone := make(chan struct{})
 	go func() {
 		defer close(shutdownDone)
@@ -402,4 +477,141 @@ func serve(args []string, path string, out io.Writer) error {
 		return nil
 	}
 	return err
+}
+
+// gatewayConfig is the parsed document behind serve --oauth-config.
+type gatewayConfig struct {
+	OAuth                  oauth.Config
+	CallbackHostAllow      []string
+	AllowInsecureCallbacks bool // tests only
+}
+
+func loadGatewayConfig(path string) (gatewayConfig, error) {
+	var raw struct {
+		Peer                   string   `json:"peer"`
+		AuthFile               string   `json:"auth_file"`
+		RedirectExact          []string `json:"redirect_exact"`
+		RedirectPatterns       []string `json:"redirect_patterns"`
+		CIMDClientIDs          []string `json:"cimd_client_ids"`
+		CIMDClientPatterns     []string `json:"cimd_client_patterns"`
+		AccessTTL              int      `json:"access_ttl_sec"`
+		RefreshTTL             int      `json:"refresh_ttl_sec"`
+		MaxDCRClients          int      `json:"max_dcr_clients"`
+		TrustedProxies         []string `json:"trusted_proxies"`
+		CallbackHostAllow      []string `json:"callback_host_allow"`
+		AllowInsecureCallbacks bool     `json:"allow_insecure_callbacks"`
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return gatewayConfig{}, err
+	}
+	dec := json.NewDecoder(strings.NewReader(string(data)))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&raw); err != nil {
+		return gatewayConfig{}, fmt.Errorf("oauth config: %w", err)
+	}
+	return gatewayConfig{
+		OAuth: oauth.Config{
+			Peer: raw.Peer, AuthFile: raw.AuthFile,
+			RedirectExact: raw.RedirectExact, RedirectPatterns: raw.RedirectPatterns,
+			CIMDClientIDs: raw.CIMDClientIDs, CIMDClientPatterns: raw.CIMDClientPatterns,
+			AccessTTL: raw.AccessTTL, RefreshTTL: raw.RefreshTTL,
+			MaxDCRClients: raw.MaxDCRClients, TrustedProxies: raw.TrustedProxies,
+		},
+		CallbackHostAllow:      raw.CallbackHostAllow,
+		AllowInsecureCallbacks: raw.AllowInsecureCallbacks,
+	}, nil
+}
+
+// gatewayMux routes the opt-in MCP/OAuth paths and leaves everything else to
+// the unchanged v1 handler. It only exists when the flags are on.
+type gatewayMux struct {
+	oauthH *oauth.Handler
+	mcpH   *mcp.Handler
+	v1     http.Handler
+}
+
+func (g *gatewayMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	p := r.URL.Path
+	switch {
+	case p == "/mcp":
+		if g.mcpH != nil {
+			g.mcpH.ServeHTTP(w, r)
+		} else {
+			g.oauthH.ServeHTTP(w, r) // 404 not_found
+		}
+	case strings.HasPrefix(p, "/oauth/"), strings.HasPrefix(p, "/.well-known/"):
+		g.oauthH.ServeHTTP(w, r)
+	default:
+		g.v1.ServeHTTP(w, r)
+	}
+}
+
+// buildGateway constructs the OAuth server, the events service and the MCP
+// endpoint. MCP requires OAuth: access tokens are its only credentials.
+func buildGateway(s *store.Store, issuer, configPath string, wantMCP bool, v1 http.Handler) (http.Handler, *events.Service, error) {
+	if issuer == "" {
+		return nil, nil, errors.New("--mcp requires --oauth-issuer")
+	}
+	if configPath == "" {
+		return nil, nil, errors.New("--oauth-config is required with --oauth-issuer")
+	}
+	cfg, err := loadGatewayConfig(configPath)
+	if err != nil {
+		return nil, nil, err
+	}
+	cfg.OAuth.Issuer = issuer
+	if cfg.AllowInsecureCallbacks && !strings.HasPrefix(issuer, "http://127.0.0.1:") {
+		return nil, nil, errors.New("allow_insecure_callbacks is only allowed for a loopback test issuer")
+	}
+	oauthSrv, err := oauth.New(s.DB(), cfg.OAuth)
+	if err != nil {
+		return nil, nil, err
+	}
+	gw := &gatewayMux{oauthH: &oauth.Handler{Server: oauthSrv, Limiter: oauthSrv.NewLimiter()}, v1: v1}
+	var ev *events.Service
+	if wantMCP {
+		ev = events.New(s.DB(), &events.SafeHTTP{
+			HostAllow:     cfg.CallbackHostAllow,
+			AllowInsecure: cfg.AllowInsecureCallbacks,
+		})
+		gw.mcpH = &mcp.Handler{Server: &mcp.Server{
+			Store: s, OAuth: oauthSrv, Events: ev, Version: version, Limiter: oauthSrv.NewLimiter(),
+		}}
+	}
+	return gw, ev, nil
+}
+
+// wireEventSinks connects peers configured with the mcp-event wake adapter to
+// the events service: an effective wake notice becomes a signed message.created
+// callback delivery.
+func wireEventSinks(wakeSvc *wake.Service, cfg wake.Config, ev *events.Service) {
+	for peer, p := range cfg.Peers {
+		if p.Adapter != "mcp-event" {
+			continue
+		}
+		_ = wakeSvc.SetSink(peer, func(ctx context.Context, n wake.Notice) error {
+			kind := n.Kind
+			if kind == "" {
+				kind = "chat"
+			}
+			now := time.Now()
+			occurred := float64(now.Unix()) + float64(now.Nanosecond())/1e9
+			data := events.PublishData{
+				"message_id":      n.ID,
+				"conversation_id": n.Conv,
+				"from":            n.From,
+				"kind":            kind,
+				"hop":             n.Hop,
+				"reply_allowed":   kind != "notice",
+				"preview":         n.Preview,
+				"created_at":      now.UTC().Format("2006-01-02T15:04:05Z"),
+			}
+			if _, err := ev.Publish(data, "evt_"+n.ID, occurred); err != nil {
+				return err
+			}
+			_, err := ev.DeliverDue(ctx)
+			return err
+		})
+	}
 }

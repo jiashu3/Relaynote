@@ -111,6 +111,16 @@ go run ./examples/mocktasks
 
 The isolated [echo-only mock](examples/mocktasks/README.md) uses four synthetic nodes and verifies all 12 directed task requests, running statuses and completed replies. It explicitly reports `agent_execution: "mock-only"`; it does not call a model, start a real Agent, execute commands or demonstrate production task control. Status messages never create new tasks.
 
+## Install
+
+Requires Go (see `go.mod` for the version).
+
+```sh
+git clone https://github.com/jiashu3/Relaynote.git
+cd Relaynote
+go build -trimpath -o relaynote ./cmd/relaynote
+```
+
 ## License
 
-No open-source license has been selected for the original Relaynote code. Company attribution does not itself grant a distribution license. Third-party modules retain their own licenses; see `go.mod`, `go.sum` and `THIRD_PARTY_NOTICES.md`.
+Relaynote is released under the MIT License, Copyright (c) 2026 ripplelab. See [LICENSE](LICENSE). Third-party modules retain their own licenses; see `go.mod`, `go.sum` and `THIRD_PARTY_NOTICES.md`.

@@ -1,0 +1,13 @@
+Peer {{.Peer}} connected (platform: webhook).
+
+Give the peer's automation this wake endpoint configuration:
+  Webhook URL: {{.WebhookURL}}
+  Signature key: {{.WebhookKey}}
+  The hub POSTs a JSON notice {"id","kind","from","conv"} (no body text) when
+  mail arrives, with header X-Relaynote-Signature: sha256=<hex HMAC-SHA256 of
+  the raw body, keyed by the signature key>. Fetch bodies on demand via the API.
+
+Peer token (Bearer, v1 API at {{.Base}}, also in {{.TokenFile}}): {{.Token}}
+
+Agent prompt fragment:
+{{.Prompt}}

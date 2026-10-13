@@ -1,0 +1,9 @@
+Peer {{.Peer}} connected (platform: none).
+
+No wake notices are sent; messages are enqueued only. Collect them with:
+  relaynote --url {{.Base}} --token-file {{.TokenFile}} inbox
+
+Peer token (Bearer, v1 API at {{.Base}}, also in {{.TokenFile}}): {{.Token}}
+
+Agent prompt fragment:
+{{.Prompt}}
